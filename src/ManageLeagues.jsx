@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 
 const ManageLeagues = ({ users, onUpdate, showMessage }) => {
-  const API_BASE = "http://localhost:3001";
+  const API_BASE = "https://football-web-bd.onrender.com";
   const [leagues, setLeagues] = useState([]);
   const [fixtures, setFixtures] = useState([]);
   const [isCreateLeagueOpen, setIsCreateLeagueOpen] = useState(false);

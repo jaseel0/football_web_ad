@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 
 const UpdateScores = ({ users, fixtures, onUpdate, showMessage }) => {
-  const API_BASE = "http://localhost:3001";
+  const API_BASE = "https://football-web-bd.onrender.com";
   const [scoreUpdate, setScoreUpdate] = useState({
     fixtureId: '',
     homeScore: '',

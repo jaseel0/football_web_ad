@@ -6,7 +6,7 @@ import ManageFixtures from "./ManageFixtures";
 import ManageLeagues from "./ManageLeagues";
 
 const AdminPanel = () => {
-  const API_BASE = "http://localhost:3001";
+  const API_BASE = "https://football-web-bd.onrender.com";
   const [activeTab, setActiveTab] = useState("users");
   const [users, setUsers] = useState([]);
   const [fixtures, setFixtures] = useState([]);

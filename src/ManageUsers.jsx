@@ -32,7 +32,7 @@ const ManageUsers = ({ users, onUpdate, showMessage }) => {
     };
 
     try {
-      const response = await fetch('http://localhost:3001/users', {
+      const response = await fetch('https://football-web-bd.onrender.com/users', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -59,7 +59,7 @@ const ManageUsers = ({ users, onUpdate, showMessage }) => {
     }
 
     try {
-      const response = await fetch(`http://localhost:3001/users/${userId}`, {
+      const response = await fetch(`https://football-web-bd.onrender.com/users/${userId}`, {
         method: 'DELETE',
       });
 
@@ -81,7 +81,7 @@ const ManageUsers = ({ users, onUpdate, showMessage }) => {
     }
 
     try {
-      const response = await fetch(`http://localhost:3001/users/${userId}`, {
+      const response = await fetch(`https://football-web-bd.onrender.com/users/${userId}`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',

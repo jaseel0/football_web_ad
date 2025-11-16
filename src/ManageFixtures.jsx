@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 
 const ManageFixtures = ({ fixtures, onUpdate, showMessage }) => {
-  const API_BASE = "http://localhost:3001";
+  const API_BASE = "https://football-web-bd.onrender.com";
   const [isAddFixtureOpen, setIsAddFixtureOpen] = useState(false);
   const [users, setUsers] = useState([]);
   const [leagues, setLeagues] = useState([]);
