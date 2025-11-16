@@ -3,11 +3,13 @@ import React, { useState, useEffect, useCallback } from "react";
 import ManageUsers from "./ManageUsers";
 import UpdateScores from "./UpdateScores";
 import ManageFixtures from "./ManageFixtures";
+import ManageLeagues from "./ManageLeagues";
 
 const AdminPanel = () => {
   const [activeTab, setActiveTab] = useState("users");
   const [users, setUsers] = useState([]);
   const [fixtures, setFixtures] = useState([]);
+  const [leagues, setLeagues] = useState([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState({ type: "", text: "" });
 
@@ -26,9 +28,10 @@ const AdminPanel = () => {
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
-      const [usersRes, fixturesRes] = await Promise.all([
+      const [usersRes, fixturesRes, leaguesRes] = await Promise.all([
         fetch("http://localhost:3001/users"),
         fetch("http://localhost:3001/fixtures"),
+        fetch("http://localhost:3001/leagues"),
       ]);
 
       if (!usersRes.ok || !fixturesRes.ok) {
@@ -37,9 +40,11 @@ const AdminPanel = () => {
 
       const usersData = await usersRes.json();
       const fixturesData = await fixturesRes.json();
+      const leaguesData = leaguesRes.ok ? await leaguesRes.json() : [];
 
       setUsers(usersData);
       setFixtures(fixturesData);
+      setLeagues(leaguesData);
     } catch (err) {
       console.error(err);
       setMessage({ type: "error", text: "Failed to fetch data" });
@@ -71,6 +76,12 @@ const AdminPanel = () => {
       label: "Manage Fixtures",
       icon: "📅",
       color: "from-orange-500 to-red-500",
+    },
+    {
+      id: "leagues",
+      label: "Manage Leagues",
+      icon: "🏆",
+      color: "from-purple-500 to-indigo-500",
     },
   ];
 
@@ -114,6 +125,8 @@ const AdminPanel = () => {
               {fixtures.filter((f) => f.status === "scheduled").length} Upcoming
               Matches
             </span>
+            <span>•</span>
+            <span>{leagues.length} Leagues</span>
           </div>
         </div>
 
@@ -123,7 +136,9 @@ const AdminPanel = () => {
             className={`mb-8 p-4 rounded-xl border-l-4 ${
               message.type === "success"
                 ? "bg-green-50 border-green-400 text-green-700"
-                : "bg-red-50 border-red-400 text-red-700"
+                : message.type === "error"
+                ? "bg-red-50 border-red-400 text-red-700"
+                : "bg-blue-50 border-blue-400 text-blue-700"
             } shadow-sm`}
           >
             <div className="flex items-center">
@@ -131,10 +146,12 @@ const AdminPanel = () => {
                 className={`flex-shrink-0 w-5 h-5 ${
                   message.type === "success"
                     ? "text-green-400"
-                    : "text-red-400"
+                    : message.type === "error"
+                    ? "text-red-400"
+                    : "text-blue-400"
                 }`}
               >
-                {message.type === "success" ? "✓" : "⚠"}
+                {message.type === "success" ? "✓" : message.type === "error" ? "⚠" : "ℹ"}
               </div>
               <div className="ml-3">
                 <p className="font-medium">{message.text}</p>
@@ -182,6 +199,14 @@ const AdminPanel = () => {
             )}
             {activeTab === "fixtures" && (
               <ManageFixtures
+                fixtures={fixtures}
+                onUpdate={fetchData}
+                showMessage={showMessage}
+              />
+            )}
+            {activeTab === "leagues" && (
+              <ManageLeagues
+                users={users}
                 fixtures={fixtures}
                 onUpdate={fetchData}
                 showMessage={showMessage}
