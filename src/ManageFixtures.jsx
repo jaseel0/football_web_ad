@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 
 const ManageFixtures = ({ fixtures, onUpdate, showMessage }) => {
+  const API_BASE = "http://localhost:3001";
   const [isAddFixtureOpen, setIsAddFixtureOpen] = useState(false);
   const [users, setUsers] = useState([]);
   const [leagues, setLeagues] = useState([]);
@@ -10,6 +11,11 @@ const ManageFixtures = ({ fixtures, onUpdate, showMessage }) => {
   const [showHomeSuggestions, setShowHomeSuggestions] = useState(false);
   const [showAwaySuggestions, setShowAwaySuggestions] = useState(false);
   const [selectedLeague, setSelectedLeague] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [dateFilter, setDateFilter] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [fixturesPerPage] = useState(6);
   
   const [formData, setFormData] = useState({
     homeTeam: '',
@@ -25,7 +31,7 @@ const ManageFixtures = ({ fixtures, onUpdate, showMessage }) => {
   useEffect(() => {
     const fetchUsers = async () => {
       try {
-        const response = await fetch('http://localhost:3001/users');
+        const response = await fetch(`${API_BASE}/users`);
         if (response.ok) {
           const usersData = await response.json();
           setUsers(usersData);
@@ -37,7 +43,7 @@ const ManageFixtures = ({ fixtures, onUpdate, showMessage }) => {
 
     const fetchLeagues = async () => {
       try {
-        const response = await fetch('http://localhost:3001/leagues');
+        const response = await fetch(`${API_BASE}/leagues`);
         if (response.ok) {
           const leaguesData = await response.json();
           setLeagues(leaguesData);
@@ -51,13 +57,30 @@ const ManageFixtures = ({ fixtures, onUpdate, showMessage }) => {
     fetchLeagues();
   }, []);
 
-  // Filter fixtures based on selected league
-  const filteredFixtures = selectedLeague === 'all' 
-    ? fixtures 
-    : fixtures.filter(fixture => fixture.leagueId === parseInt(selectedLeague));
+  // Filter fixtures based on selected filters
+  const filteredFixtures = fixtures.filter(fixture => {
+    // League filter
+    const leagueMatch = selectedLeague === 'all' || 
+      (selectedLeague === 'general' ? !fixture.leagueId : fixture.leagueId === parseInt(selectedLeague));
+    
+    // Status filter
+    const statusMatch = statusFilter === 'all' || fixture.status === statusFilter;
+    
+    // Date filter
+    const dateMatch = !dateFilter || fixture.date === dateFilter;
+    
+    // Search filter
+    const searchMatch = !searchTerm || 
+      fixture.homeTeam.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      fixture.awayTeam.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      fixture.venue.toLowerCase().includes(searchTerm.toLowerCase());
+
+    return leagueMatch && statusMatch && dateMatch && searchMatch;
+  });
 
   const completedFixtures = filteredFixtures.filter(f => f.status === 'completed');
   const scheduledFixtures = filteredFixtures.filter(f => f.status === 'scheduled');
+  const liveFixtures = filteredFixtures.filter(f => f.status === 'live');
 
   // Filter teams based on input
   useEffect(() => {
@@ -65,7 +88,7 @@ const ManageFixtures = ({ fixtures, onUpdate, showMessage }) => {
       const filtered = users
         .filter(user => 
           user.teamName?.toLowerCase().includes(formData.homeTeam.toLowerCase()) ||
-          user.name?.toLowerCase().includes(formData.homeTeam.toLowerCase())
+          user.username?.toLowerCase().includes(formData.homeTeam.toLowerCase())
         )
         .slice(0, 5);
       setFilteredHomeTeams(filtered);
@@ -81,7 +104,7 @@ const ManageFixtures = ({ fixtures, onUpdate, showMessage }) => {
       const filtered = users
         .filter(user => 
           user.teamName?.toLowerCase().includes(formData.awayTeam.toLowerCase()) ||
-          user.name?.toLowerCase().includes(formData.awayTeam.toLowerCase())
+          user.username?.toLowerCase().includes(formData.awayTeam.toLowerCase())
         )
         .slice(0, 5);
       setFilteredAwayTeams(filtered);
@@ -92,13 +115,50 @@ const ManageFixtures = ({ fixtures, onUpdate, showMessage }) => {
     }
   }, [formData.awayTeam, users]);
 
+  // Pagination logic
+  const indexOfLastFixture = currentPage * fixturesPerPage;
+  const indexOfFirstFixture = indexOfLastFixture - fixturesPerPage;
+  const currentFixtures = filteredFixtures.slice(indexOfFirstFixture, indexOfLastFixture);
+  const totalPages = Math.ceil(filteredFixtures.length / fixturesPerPage);
+
+  // Change page
+  const paginate = (pageNumber) => setCurrentPage(pageNumber);
+  const nextPage = () => setCurrentPage(prev => Math.min(prev + 1, totalPages));
+  const prevPage = () => setCurrentPage(prev => Math.max(prev - 1, 1));
+
+  // Reset to first page when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [selectedLeague, statusFilter, dateFilter, searchTerm]);
+
+  // Generate page numbers for pagination
+  const getPageNumbers = () => {
+    const pageNumbers = [];
+    const maxVisiblePages = 5;
+    
+    if (totalPages <= maxVisiblePages) {
+      for (let i = 1; i <= totalPages; i++) {
+        pageNumbers.push(i);
+      }
+    } else {
+      const startPage = Math.max(1, currentPage - Math.floor(maxVisiblePages / 2));
+      const endPage = Math.min(totalPages, startPage + maxVisiblePages - 1);
+      
+      for (let i = startPage; i <= endPage; i++) {
+        pageNumbers.push(i);
+      }
+    }
+    
+    return pageNumbers;
+  };
+
   const handleResetFixture = async (fixtureId) => {
     if (!window.confirm('Are you sure you want to reset this fixture? This will remove the scores and mark it as scheduled.')) {
       return;
     }
 
     try {
-      const response = await fetch(`http://localhost:3001/fixtures/${fixtureId}`, {
+      const response = await fetch(`${API_BASE}/fixtures/${fixtureId}`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -133,10 +193,10 @@ const ManageFixtures = ({ fixtures, onUpdate, showMessage }) => {
 
     // Find the actual team names from user data
     const homeUser = users.find(user => 
-      user.teamName === formData.homeTeam || user.name === formData.homeTeam
+      user.teamName === formData.homeTeam || user.username === formData.homeTeam
     );
     const awayUser = users.find(user => 
-      user.teamName === formData.awayTeam || user.name === formData.awayTeam
+      user.teamName === formData.awayTeam || user.username === formData.awayTeam
     );
 
     const homeTeamName = homeUser?.teamName || formData.homeTeam;
@@ -157,11 +217,11 @@ const ManageFixtures = ({ fixtures, onUpdate, showMessage }) => {
 
     // Add leagueId if selected
     if (formData.leagueId) {
-      fixtureData.leagueId = parseInt(formData.leagueId);
+      fixtureData.leagueId = formData.leagueId;
     }
 
     try {
-      const response = await fetch('http://localhost:3001/fixtures', {
+      const response = await fetch(`${API_BASE}/fixtures`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -217,7 +277,7 @@ const ManageFixtures = ({ fixtures, onUpdate, showMessage }) => {
     }
 
     try {
-      const response = await fetch(`http://localhost:3001/fixtures/${fixtureId}`, {
+      const response = await fetch(`${API_BASE}/fixtures/${fixtureId}`, {
         method: 'DELETE',
       });
 
@@ -233,20 +293,25 @@ const ManageFixtures = ({ fixtures, onUpdate, showMessage }) => {
     }
   };
 
-  // Get all registered users with their teams
-  const registeredUsers = users.filter(user => user.teamName);
-  
-  // Get teams that are already scheduled in upcoming fixtures
-  const scheduledTeams = new Set([
-    ...scheduledFixtures.map(f => f.homeTeam),
-    ...scheduledFixtures.map(f => f.awayTeam)
-  ]);
+  // Function to get initials from team name
+  const getInitials = (teamName) => {
+    if (!teamName) return 'TM';
+    return teamName
+      .split(' ')
+      .map(word => word.charAt(0).toUpperCase())
+      .join('')
+      .slice(0, 2);
+  };
 
-  // Available users (not scheduled in upcoming matches)
-  const availableUsers = registeredUsers.filter(user => !scheduledTeams.has(user.teamName));
-
-  // Users currently scheduled
-  const scheduledUsers = registeredUsers.filter(user => scheduledTeams.has(user.teamName));
+  // Function to generate random color based on team name
+  const getTeamColor = (teamName) => {
+    const colors = [
+      'bg-[#850cec]', 'bg-purple-600', 'bg-blue-600', 'bg-green-600',
+      'bg-red-600', 'bg-yellow-600', 'bg-pink-600', 'bg-indigo-600'
+    ];
+    const index = (teamName?.length || 0) % colors.length;
+    return colors[index];
+  };
 
   // Get league name for a fixture
   const getLeagueName = (fixture) => {
@@ -255,98 +320,133 @@ const ManageFixtures = ({ fixtures, onUpdate, showMessage }) => {
     return league ? league.name : 'Unknown League';
   };
 
-  // Get league badge color
-  const getLeagueBadgeColor = (fixture) => {
-    if (!fixture.leagueId) return 'from-gray-500 to-gray-600';
-    const leagueColors = [
-      'from-blue-500 to-cyan-500',
-      'from-purple-500 to-pink-500',
-      'from-green-500 to-emerald-500',
-      'from-orange-500 to-red-500',
-      'from-indigo-500 to-purple-500',
-      'from-teal-500 to-blue-500'
-    ];
-    return leagueColors[fixture.leagueId % leagueColors.length];
+  // Get status badge color
+  const getStatusBadgeColor = (status) => {
+    switch (status) {
+      case 'completed': return 'bg-green-500/20 text-green-400 border-green-500/30';
+      case 'scheduled': return 'bg-blue-500/20 text-blue-400 border-blue-500/30';
+      case 'live': return 'bg-red-500/20 text-red-400 border-red-500/30';
+      default: return 'bg-gray-500/20 text-gray-400 border-gray-500/30';
+    }
+  };
+
+  // Get status icon
+  const getStatusIcon = (status) => {
+    switch (status) {
+      case 'completed': return '✅';
+      case 'scheduled': return '⏰';
+      case 'live': return '🔴';
+      default: return '⚫';
+    }
   };
 
   return (
     <div className="space-y-8">
-      {/* Header with League Filter */}
-      <div className="text-center bg-gradient-to-r from-purple-50 to-blue-50 rounded-2xl p-6 border-2 border-purple-200">
-        <div className="flex flex-col lg:flex-row justify-between items-center mb-4 gap-4">
+      {/* Header with Filters */}
+      <div className="bg-gray-800 rounded-2xl p-6 border border-gray-700">
+        <div className="flex flex-col lg:flex-row justify-between items-center mb-6 gap-4">
           <div className="text-center lg:text-left">
-            <h2 className="text-3xl font-bold text-gray-900 mb-2">Fixture Management</h2>
-            <p className="text-gray-600">Schedule and manage matches across all leagues</p>
+            <h2 className="text-3xl font-bold text-white mb-2">Fixture Management</h2>
+            <p className="text-gray-400">Schedule and manage matches across all leagues</p>
           </div>
           
-          <div className="flex items-center space-x-4">
-            {/* League Filter */}
-            <div className="flex items-center space-x-2">
-              <span className="text-gray-700 font-semibold">Filter by League:</span>
-              <select
-                value={selectedLeague}
-                onChange={(e) => setSelectedLeague(e.target.value)}
-                className="px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              >
-                <option value="all">All Leagues</option>
-                <option value="general">General Fixtures</option>
-                {leagues.map(league => (
-                  <option key={league.id} value={league.id}>
-                    {league.name}
-                  </option>
-                ))}
-              </select>
-            </div>
+          <button
+            onClick={() => setIsAddFixtureOpen(true)}
+            className="bg-gradient-to-r from-[#850cec] to-purple-600 hover:from-purple-700 hover:to-[#850cec] text-white font-bold py-3 px-6 rounded-2xl transition duration-300 transform hover:scale-105 shadow-lg shadow-[#850cec]/30"
+          >
+            ➕ Schedule New Match
+          </button>
+        </div>
 
-            <button
-              onClick={() => setIsAddFixtureOpen(true)}
-              className="bg-gradient-to-r from-purple-500 to-blue-500 hover:from-purple-600 hover:to-blue-600 text-white font-bold py-3 px-6 rounded-2xl transition duration-300 transform hover:scale-105 shadow-lg"
+        {/* Filters Section */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
+          {/* League Filter */}
+          <div>
+            <label className="block text-sm font-semibold text-gray-300 mb-2">
+              League
+            </label>
+            <select
+              value={selectedLeague}
+              onChange={(e) => setSelectedLeague(e.target.value)}
+              className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-[#850cec] focus:border-transparent text-white"
             >
-              ➕ Schedule New Match
-            </button>
+              <option value="all">All Leagues</option>
+              <option value="general">General Fixtures</option>
+              {leagues.map(league => (
+                <option key={league.id} value={league.id}>
+                  {league.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Status Filter */}
+          <div>
+            <label className="block text-sm font-semibold text-gray-300 mb-2">
+              Status
+            </label>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-[#850cec] focus:border-transparent text-white"
+            >
+              <option value="all">All Status</option>
+              <option value="scheduled">Scheduled</option>
+              <option value="live">Live</option>
+              <option value="completed">Completed</option>
+            </select>
+          </div>
+
+          {/* Date Filter */}
+          <div>
+            <label className="block text-sm font-semibold text-gray-300 mb-2">
+              Date
+            </label>
+            <input
+              type="date"
+              value={dateFilter}
+              onChange={(e) => setDateFilter(e.target.value)}
+              className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-[#850cec] focus:border-transparent text-white"
+            />
+          </div>
+
+          {/* Search Filter */}
+          <div className="lg:col-span-2">
+            <label className="block text-sm font-semibold text-gray-300 mb-2">
+              Search
+            </label>
+            <div className="relative">
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Search teams or venue..."
+                className="w-full px-3 py-2 pl-10 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-[#850cec] focus:border-transparent text-white"
+              />
+              <div className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400">
+                🔍
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* League Statistics */}
-        <div className="grid grid-cols-1 md:grid-rows-1 md:grid-cols-4 gap-4 max-w-4xl mx-auto">
-          <div className="bg-white rounded-xl p-4 border border-blue-200">
-            <div className="flex items-center justify-center space-x-2 mb-2">
-              <span className="text-blue-500 text-lg">📊</span>
-              <h4 className="font-semibold text-gray-800">Total Matches</h4>
-            </div>
-            <p className="text-2xl font-bold text-gray-900">{filteredFixtures.length}</p>
-            <p className="text-gray-500 text-sm">
-              {selectedLeague === 'all' ? 'All leagues' : 
-               selectedLeague === 'general' ? 'General fixtures' : 
-               leagues.find(l => l.id === parseInt(selectedLeague))?.name}
-            </p>
+        {/* Statistics Cards */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="bg-gray-700 rounded-xl p-4 text-center border border-gray-600">
+            <div className="text-2xl font-bold text-[#850cec] mb-1">{filteredFixtures.length}</div>
+            <div className="text-gray-400 text-sm">Total Matches</div>
           </div>
-
-          <div className="bg-white rounded-xl p-4 border border-green-200">
-            <div className="flex items-center justify-center space-x-2 mb-2">
-              <span className="text-green-500 text-lg">✅</span>
-              <h4 className="font-semibold text-gray-800">Completed</h4>
-            </div>
-            <p className="text-2xl font-bold text-gray-900">{completedFixtures.length}</p>
-            <p className="text-gray-500 text-sm">Matches played</p>
+          <div className="bg-gray-700 rounded-xl p-4 text-center border border-gray-600">
+            <div className="text-2xl font-bold text-green-400 mb-1">{completedFixtures.length}</div>
+            <div className="text-gray-400 text-sm">Completed</div>
           </div>
-
-          <div className="bg-white rounded-xl p-4 border border-orange-200">
-            <div className="flex items-center justify-center space-x-2 mb-2">
-              <span className="text-orange-500 text-lg">⏰</span>
-              <h4 className="font-semibold text-gray-800">Scheduled</h4>
-            </div>
-            <p className="text-2xl font-bold text-gray-900">{scheduledFixtures.length}</p>
-            <p className="text-gray-500 text-sm">Upcoming matches</p>
+          <div className="bg-gray-700 rounded-xl p-4 text-center border border-gray-600">
+            <div className="text-2xl font-bold text-blue-400 mb-1">{scheduledFixtures.length}</div>
+            <div className="text-gray-400 text-sm">Scheduled</div>
           </div>
-
-          <div className="bg-white rounded-xl p-4 border border-purple-200">
-            <div className="flex items-center justify-center space-x-2 mb-2">
-              <span className="text-purple-500 text-lg">🏆</span>
-              <h4 className="font-semibold text-gray-800">Leagues</h4>
-            </div>
-            <p className="text-2xl font-bold text-gray-900">{leagues.length}</p>
-            <p className="text-gray-500 text-sm">Active competitions</p>
+          <div className="bg-gray-700 rounded-xl p-4 text-center border border-gray-600">
+            <div className="text-2xl font-bold text-red-400 mb-1">{liveFixtures.length}</div>
+            <div className="text-gray-400 text-sm">Live</div>
           </div>
         </div>
       </div>
@@ -354,12 +454,12 @@ const ManageFixtures = ({ fixtures, onUpdate, showMessage }) => {
       {/* Add Fixture Modal */}
       {isAddFixtureOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl p-8 w-full max-w-md max-h-[90vh] overflow-y-auto">
+          <div className="bg-gray-800 rounded-2xl p-8 w-full max-w-md max-h-[90vh] overflow-y-auto border border-gray-700">
             <div className="flex justify-between items-center mb-6">
-              <h3 className="text-2xl font-bold text-gray-900">Schedule New Match</h3>
+              <h3 className="text-2xl font-bold text-white">Schedule New Match</h3>
               <button
                 onClick={() => setIsAddFixtureOpen(false)}
-                className="text-gray-500 hover:text-gray-700 text-2xl"
+                className="text-gray-400 hover:text-white text-2xl transition duration-300"
               >
                 ×
               </button>
@@ -368,30 +468,27 @@ const ManageFixtures = ({ fixtures, onUpdate, showMessage }) => {
             <form onSubmit={handleAddFixture} className="space-y-4">
               {/* League Selection */}
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                <label className="block text-sm font-semibold text-gray-300 mb-2">
                   League Assignment
                 </label>
                 <select
                   name="leagueId"
                   value={formData.leagueId}
                   onChange={handleFormChange}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-xl focus:ring-2 focus:ring-[#850cec] focus:border-transparent text-white"
                 >
                   <option value="">General Fixture (No League)</option>
                   {leagues.map(league => (
                     <option key={league.id} value={league.id}>
-                      {league.name} ({league.teams?.length || 0}/{league.maxTeams} teams)
+                      {league.name}
                     </option>
                   ))}
                 </select>
-                <div className="text-xs text-gray-500 mt-1">
-                  Assign this match to a specific league or keep it as a general fixture
-                </div>
               </div>
 
               {/* Home Team Selection */}
               <div className="relative">
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                <label className="block text-sm font-semibold text-gray-300 mb-2">
                   Home Team *
                 </label>
                 <input
@@ -400,53 +497,29 @@ const ManageFixtures = ({ fixtures, onUpdate, showMessage }) => {
                   value={formData.homeTeam}
                   onChange={handleFormChange}
                   required
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-xl focus:ring-2 focus:ring-[#850cec] focus:border-transparent text-white"
                   placeholder="Search team or manager..."
                   autoComplete="off"
                 />
                 {showHomeSuggestions && filteredHomeTeams.length > 0 && (
-                  <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-xl shadow-lg max-h-60 overflow-y-auto">
+                  <div className="absolute z-10 w-full mt-1 bg-gray-700 border border-gray-600 rounded-xl shadow-lg max-h-60 overflow-y-auto">
                     {filteredHomeTeams.map(user => (
                       <div
                         key={user.id}
-                        onClick={() => handleSuggestionClick('homeTeam', user.teamName, user.name)}
-                        className="px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition duration-200"
+                        onClick={() => handleSuggestionClick('homeTeam', user.teamName, user.username)}
+                        className="px-4 py-3 hover:bg-gray-600 cursor-pointer border-b border-gray-600 last:border-b-0 transition duration-200"
                       >
-                        <div className="font-semibold text-gray-800">{user.teamName}</div>
-                        <div className="text-sm text-gray-500 flex justify-between items-center">
-                          <span>Manager: {user.name}</span>
-                          <span className={`px-2 py-1 rounded-full text-xs ${
-                            availableUsers.some(u => u.id === user.id) 
-                              ? 'bg-green-100 text-green-800' 
-                              : 'bg-orange-100 text-orange-800'
-                          }`}>
-                            {availableUsers.some(u => u.id === user.id) ? 'Available' : 'Scheduled'}
-                          </span>
-                        </div>
+                        <div className="font-semibold text-white">{user.teamName}</div>
+                        <div className="text-sm text-gray-400">@{user.username}</div>
                       </div>
                     ))}
                   </div>
                 )}
-                <div className="text-xs text-gray-500 mt-1">
-                  {formData.homeTeam && availableUsers.some(user => 
-                    user.teamName === formData.homeTeam || user.name === formData.homeTeam
-                  ) ? (
-                    <span className="text-green-600">✅ This team is available for scheduling</span>
-                  ) : formData.homeTeam && scheduledUsers.some(user => 
-                    user.teamName === formData.homeTeam || user.name === formData.homeTeam
-                  ) ? (
-                    <span className="text-orange-600">⚠️ This team is already scheduled</span>
-                  ) : formData.homeTeam ? (
-                    <span className="text-red-600">❌ Team not found in registered users</span>
-                  ) : (
-                    'Search for registered teams by team name or manager'
-                  )}
-                </div>
               </div>
 
               {/* Away Team Selection */}
               <div className="relative">
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                <label className="block text-sm font-semibold text-gray-300 mb-2">
                   Away Team *
                 </label>
                 <input
@@ -455,54 +528,30 @@ const ManageFixtures = ({ fixtures, onUpdate, showMessage }) => {
                   value={formData.awayTeam}
                   onChange={handleFormChange}
                   required
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-xl focus:ring-2 focus:ring-[#850cec] focus:border-transparent text-white"
                   placeholder="Search team or manager..."
                   autoComplete="off"
                 />
                 {showAwaySuggestions && filteredAwayTeams.length > 0 && (
-                  <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-xl shadow-lg max-h-60 overflow-y-auto">
+                  <div className="absolute z-10 w-full mt-1 bg-gray-700 border border-gray-600 rounded-xl shadow-lg max-h-60 overflow-y-auto">
                     {filteredAwayTeams.map(user => (
                       <div
                         key={user.id}
-                        onClick={() => handleSuggestionClick('awayTeam', user.teamName, user.name)}
-                        className="px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition duration-200"
+                        onClick={() => handleSuggestionClick('awayTeam', user.teamName, user.username)}
+                        className="px-4 py-3 hover:bg-gray-600 cursor-pointer border-b border-gray-600 last:border-b-0 transition duration-200"
                       >
-                        <div className="font-semibold text-gray-800">{user.teamName}</div>
-                        <div className="text-sm text-gray-500 flex justify-between items-center">
-                          <span>Manager: {user.name}</span>
-                          <span className={`px-2 py-1 rounded-full text-xs ${
-                            availableUsers.some(u => u.id === user.id) 
-                              ? 'bg-green-100 text-green-800' 
-                              : 'bg-orange-100 text-orange-800'
-                          }`}>
-                            {availableUsers.some(u => u.id === user.id) ? 'Available' : 'Scheduled'}
-                          </span>
-                        </div>
+                        <div className="font-semibold text-white">{user.teamName}</div>
+                        <div className="text-sm text-gray-400">@{user.username}</div>
                       </div>
                     ))}
                   </div>
                 )}
-                <div className="text-xs text-gray-500 mt-1">
-                  {formData.awayTeam && availableUsers.some(user => 
-                    user.teamName === formData.awayTeam || user.name === formData.awayTeam
-                  ) ? (
-                    <span className="text-green-600">✅ This team is available for scheduling</span>
-                  ) : formData.awayTeam && scheduledUsers.some(user => 
-                    user.teamName === formData.awayTeam || user.name === formData.awayTeam
-                  ) ? (
-                    <span className="text-orange-600">⚠️ This team is already scheduled</span>
-                  ) : formData.awayTeam ? (
-                    <span className="text-red-600">❌ Team not found in registered users</span>
-                  ) : (
-                    'Search for registered teams by team name or manager'
-                  )}
-                </div>
               </div>
 
               {/* Match Details */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  <label className="block text-sm font-semibold text-gray-300 mb-2">
                     Match Date *
                   </label>
                   <input
@@ -511,12 +560,12 @@ const ManageFixtures = ({ fixtures, onUpdate, showMessage }) => {
                     value={formData.date}
                     onChange={handleFormChange}
                     required
-                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-xl focus:ring-2 focus:ring-[#850cec] focus:border-transparent text-white"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  <label className="block text-sm font-semibold text-gray-300 mb-2">
                     Match Time *
                   </label>
                   <input
@@ -525,13 +574,13 @@ const ManageFixtures = ({ fixtures, onUpdate, showMessage }) => {
                     value={formData.time}
                     onChange={handleFormChange}
                     required
-                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-xl focus:ring-2 focus:ring-[#850cec] focus:border-transparent text-white"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                <label className="block text-sm font-semibold text-gray-300 mb-2">
                   Venue *
                 </label>
                 <input
@@ -540,13 +589,13 @@ const ManageFixtures = ({ fixtures, onUpdate, showMessage }) => {
                   value={formData.venue}
                   onChange={handleFormChange}
                   required
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-xl focus:ring-2 focus:ring-[#850cec] focus:border-transparent text-white"
                   placeholder="Enter match venue"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                <label className="block text-sm font-semibold text-gray-300 mb-2">
                   Round Number *
                 </label>
                 <input
@@ -556,67 +605,22 @@ const ManageFixtures = ({ fixtures, onUpdate, showMessage }) => {
                   onChange={handleFormChange}
                   required
                   min="1"
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-xl focus:ring-2 focus:ring-[#850cec] focus:border-transparent text-white"
                 />
               </div>
-
-              {/* Validation Summary */}
-              {(formData.homeTeam || formData.awayTeam) && (
-                <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
-                  <h4 className="font-semibold text-gray-800 mb-2">Match Validation</h4>
-                  <div className="space-y-2 text-sm">
-                    <div className={`flex items-center space-x-2 ${
-                      formData.homeTeam && formData.awayTeam && formData.homeTeam !== formData.awayTeam 
-                        ? 'text-green-600' 
-                        : 'text-red-600'
-                    }`}>
-                      <span>{formData.homeTeam && formData.awayTeam && formData.homeTeam !== formData.awayTeam ? '✅' : '❌'}</span>
-                      <span>Teams must be different</span>
-                    </div>
-                    <div className={`flex items-center space-x-2 ${
-                      !formData.homeTeam || availableUsers.some(user => 
-                        user.teamName === formData.homeTeam || user.name === formData.homeTeam
-                      ) ? 'text-green-600' : 'text-red-600'
-                    }`}>
-                      <span>{!formData.homeTeam || availableUsers.some(user => 
-                        user.teamName === formData.homeTeam || user.name === formData.homeTeam
-                      ) ? '✅' : '❌'}</span>
-                      <span>Home team must be registered and available</span>
-                    </div>
-                    <div className={`flex items-center space-x-2 ${
-                      !formData.awayTeam || availableUsers.some(user => 
-                        user.teamName === formData.awayTeam || user.name === formData.awayTeam
-                      ) ? 'text-green-600' : 'text-red-600'
-                    }`}>
-                      <span>{!formData.awayTeam || availableUsers.some(user => 
-                        user.teamName === formData.awayTeam || user.name === formData.awayTeam
-                      ) ? '✅' : '❌'}</span>
-                      <span>Away team must be registered and available</span>
-                    </div>
-                  </div>
-                </div>
-              )}
 
               <div className="flex space-x-3 pt-4">
                 <button
                   type="button"
                   onClick={() => setIsAddFixtureOpen(false)}
-                  className="flex-1 px-4 py-3 bg-gray-300 hover:bg-gray-400 text-gray-800 font-semibold rounded-xl transition duration-300"
+                  className="flex-1 px-4 py-3 bg-gray-700 hover:bg-gray-600 text-white font-semibold rounded-xl transition duration-300"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 px-4 py-3 bg-blue-500 hover:bg-blue-600 text-white font-semibold rounded-xl transition duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
-                  disabled={
-                    formData.homeTeam === formData.awayTeam ||
-                    !availableUsers.some(user => 
-                      user.teamName === formData.homeTeam || user.name === formData.homeTeam
-                    ) ||
-                    !availableUsers.some(user => 
-                      user.teamName === formData.awayTeam || user.name === formData.awayTeam
-                    )
-                  }
+                  className="flex-1 px-4 py-3 bg-[#850cec] hover:bg-purple-700 text-white font-semibold rounded-xl transition duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={formData.homeTeam === formData.awayTeam}
                 >
                   Schedule Match
                 </button>
@@ -626,180 +630,160 @@ const ManageFixtures = ({ fixtures, onUpdate, showMessage }) => {
         </div>
       )}
 
-      {/* Completed Fixtures */}
-      <div>
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 bg-green-100 rounded-xl flex items-center justify-center">
-              <span className="text-green-600 text-lg">✅</span>
-            </div>
-            <div>
-              <h3 className="text-2xl font-bold text-gray-900">Completed Matches</h3>
-              <p className="text-gray-600">Match results and statistics</p>
-            </div>
+      {/* Results Count and Pagination Info */}
+      <div className="flex justify-between items-center">
+        <p className="text-gray-400">
+          Showing <span className="text-[#850cec] font-semibold">
+            {filteredFixtures.length === 0 ? 0 : indexOfFirstFixture + 1}-{Math.min(indexOfLastFixture, filteredFixtures.length)}
+          </span> of{' '}
+          <span className="text-purple-400 font-semibold">{filteredFixtures.length}</span> fixtures
+        </p>
+        
+        {totalPages > 1 && (
+          <div className="text-gray-400 text-sm">
+            Page <span className="text-[#850cec] font-semibold">{currentPage}</span> of{' '}
+            <span className="text-purple-400 font-semibold">{totalPages}</span>
           </div>
-          <div className="text-sm text-gray-500">
-            Showing {completedFixtures.length} of {fixtures.filter(f => f.status === 'completed').length} completed matches
-          </div>
-        </div>
+        )}
+      </div>
 
-        <div className="grid grid-cols-1 gap-4">
-          {completedFixtures.map(fixture => (
-            <div key={fixture.id} className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-2xl p-6 border-2 border-green-200 hover:border-green-300 transition duration-300">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center space-x-3">
-                  <span className="bg-green-500 text-white px-4 py-1 rounded-full text-sm font-bold">
-                    COMPLETED
-                  </span>
-                  <span className={`bg-gradient-to-r ${getLeagueBadgeColor(fixture)} text-white px-3 py-1 rounded-full text-sm font-semibold`}>
-                    {getLeagueName(fixture)}
-                  </span>
-                  <span className="bg-gray-100 text-gray-700 px-3 py-1 rounded-full text-sm font-semibold">
-                    Round {fixture.round}
-                  </span>
-                </div>
-                <div className="flex items-center space-x-2">
+      {/* Fixtures Grid */}
+      <div className="grid grid-cols-1 gap-6">
+        {currentFixtures.map(fixture => (
+          <div key={fixture.id} className="bg-gray-800 rounded-2xl p-6 border-2 border-gray-700 hover:border-[#850cec] transition duration-300 group">
+            <div className="flex justify-between items-start mb-4">
+              <div className="flex items-center space-x-3">
+                <span className={`px-3 py-1 rounded-full text-sm font-semibold border ${getStatusBadgeColor(fixture.status)}`}>
+                  {getStatusIcon(fixture.status)} {fixture.status.toUpperCase()}
+                </span>
+                <span className="bg-[#850cec]/20 text-[#850cec] px-3 py-1 rounded-full text-sm font-semibold border border-[#850cec]/30">
+                  {getLeagueName(fixture)}
+                </span>
+                <span className="bg-gray-700 text-gray-300 px-3 py-1 rounded-full text-sm font-semibold">
+                  Round {fixture.round}
+                </span>
+              </div>
+              <div className="flex items-center space-x-2">
+                {fixture.status === 'completed' && (
                   <button
                     onClick={() => handleResetFixture(fixture.id)}
-                    className="px-4 py-2 bg-yellow-500 hover:bg-yellow-600 text-white font-semibold rounded-lg transition duration-300 transform hover:scale-105 shadow-md"
+                    className="px-3 py-1 bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-400 font-semibold rounded-lg transition duration-300 border border-yellow-500/30"
                   >
                     🔄 Reset
                   </button>
-                  <button
-                    onClick={() => handleDeleteFixture(fixture.id)}
-                    className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white font-semibold rounded-lg transition duration-300 transform hover:scale-105 shadow-md"
-                  >
-                    🗑️ Delete
-                  </button>
-                  <div className="text-sm text-gray-500">
-                    {new Date(fixture.date).toLocaleDateString()} • {fixture.time}
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex justify-between items-center">
-                <div className="text-center flex-1">
-                  <div className="font-bold text-gray-900 text-xl mb-2">{fixture.homeTeam}</div>
-                  <div className="text-3xl font-black text-green-600 bg-white py-3 rounded-xl shadow-inner border border-green-200">
-                    {fixture.homeScore}
-                  </div>
-                </div>
-                
-                <div className="text-center mx-8">
-                  <div className="text-4xl font-black text-gray-400 mb-2">VS</div>
-                  <div className="text-xs text-gray-500 bg-white px-3 py-1 rounded-full shadow-sm border border-gray-200">
-                    🏟️ {fixture.venue}
-                  </div>
-                </div>
-                
-                <div className="text-center flex-1">
-                  <div className="font-bold text-gray-900 text-xl mb-2">{fixture.awayTeam}</div>
-                  <div className="text-3xl font-black text-green-600 bg-white py-3 rounded-xl shadow-inner border border-green-200">
-                    {fixture.awayScore}
-                  </div>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {completedFixtures.length === 0 && (
-          <div className="text-center py-12 bg-gradient-to-br from-gray-50 to-gray-100 rounded-2xl border-2 border-dashed border-gray-300">
-            <div className="text-6xl mb-4">⚽</div>
-            <h4 className="text-xl font-bold text-gray-600 mb-2">No Completed Matches</h4>
-            <p className="text-gray-500">
-              {selectedLeague === 'all' 
-                ? 'Match results will appear here once games are completed.' 
-                : `No completed matches found in ${selectedLeague === 'general' ? 'general fixtures' : 'this league'}.`
-              }
-            </p>
-          </div>
-        )}
-      </div>
-
-      {/* Scheduled Fixtures */}
-      <div>
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center">
-              <span className="text-blue-600 text-lg">⏰</span>
-            </div>
-            <div>
-              <h3 className="text-2xl font-bold text-gray-900">Upcoming Matches</h3>
-              <p className="text-gray-600">Scheduled fixtures awaiting results</p>
-            </div>
-          </div>
-          <div className="text-sm text-gray-500">
-            Showing {scheduledFixtures.length} of {fixtures.filter(f => f.status === 'scheduled').length} scheduled matches
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {scheduledFixtures.map(fixture => (
-            <div key={fixture.id} className="bg-gradient-to-r from-blue-50 to-cyan-50 rounded-2xl p-6 border-2 border-blue-200 hover:border-blue-300 transition duration-300">
-              <div className="flex justify-between items-start mb-4">
-                <div className="flex items-center space-x-2">
-                  <span className="bg-gradient-to-r from-blue-500 to-cyan-500 text-white px-4 py-1 rounded-full text-sm font-bold">
-                    Round {fixture.round}
-                  </span>
-                  <span className={`bg-gradient-to-r ${getLeagueBadgeColor(fixture)} text-white px-3 py-1 rounded-full text-sm font-semibold`}>
-                    {getLeagueName(fixture)}
-                  </span>
-                </div>
+                )}
                 <button
                   onClick={() => handleDeleteFixture(fixture.id)}
-                  className="text-red-500 hover:text-red-700 transition duration-300"
-                  title="Delete fixture"
+                  className="px-3 py-1 bg-red-500/20 hover:bg-red-500/30 text-red-400 font-semibold rounded-lg transition duration-300 border border-red-500/30"
                 >
-                  🗑️
+                  🗑️ Delete
                 </button>
               </div>
-              
-              <div className="flex justify-between items-center mb-4">
-                <div className="text-center flex-1">
-                  <div className="font-bold text-gray-900 text-lg">{fixture.homeTeam}</div>
-                  <div className="text-blue-500 text-sm font-semibold">Home</div>
-                </div>
-                
-                <div className="text-center mx-4">
-                  <div className="text-2xl font-black text-gray-400 mb-1">VS</div>
-                  <div className="text-xs text-gray-500 bg-white px-2 py-1 rounded border border-gray-200">
-                    {new Date(fixture.date).toLocaleDateString()}
+            </div>
+
+            <div className="flex justify-between items-center">
+              <div className="text-center flex-1">
+                <div className="flex items-center justify-center gap-3 mb-2">
+                  <div className={`h-12 w-12 rounded-full flex items-center justify-center text-white font-bold text-lg ${getTeamColor(fixture.homeTeam)}`}>
+                    {getInitials(fixture.homeTeam)}
                   </div>
-                  <div className="text-xs text-gray-500 mt-1">{fixture.time}</div>
+                  <div>
+                    <div className="text-lg font-bold text-white">{fixture.homeTeam}</div>
+                    <div className="text-sm text-gray-400">Home</div>
+                  </div>
                 </div>
-                
-                <div className="text-center flex-1">
-                  <div className="font-bold text-gray-900 text-lg">{fixture.awayTeam}</div>
-                  <div className="text-cyan-500 text-sm font-semibold">Away</div>
-                </div>
+                {fixture.status === 'completed' && (
+                  <div className="text-2xl font-black text-green-400 bg-gray-700 py-2 rounded-xl">
+                    {fixture.homeScore}
+                  </div>
+                )}
               </div>
               
-              <div className="text-center text-sm text-gray-600 bg-white py-2 rounded-lg border border-blue-200">
-                🏟️ {fixture.venue}
+              <div className="text-center mx-4">
+                <div className="text-2xl font-black text-gray-400 mb-2">VS</div>
+                <div className="text-sm text-gray-500">
+                  {new Date(fixture.date).toLocaleDateString()}
+                </div>
+                <div className="text-sm text-gray-500">{fixture.time}</div>
+                <div className="text-xs text-gray-500 mt-1">🏟️ {fixture.venue}</div>
+              </div>
+              
+              <div className="text-center flex-1">
+                <div className="flex items-center justify-center gap-3 mb-2">
+                  <div>
+                    <div className="text-lg font-bold text-white">{fixture.awayTeam}</div>
+                    <div className="text-sm text-gray-400">Away</div>
+                  </div>
+                  <div className={`h-12 w-12 rounded-full flex items-center justify-center text-white font-bold text-lg ${getTeamColor(fixture.awayTeam)}`}>
+                    {getInitials(fixture.awayTeam)}
+                  </div>
+                </div>
+                {fixture.status === 'completed' && (
+                  <div className="text-2xl font-black text-green-400 bg-gray-700 py-2 rounded-xl">
+                    {fixture.awayScore}
+                  </div>
+                )}
               </div>
             </div>
-          ))}
-        </div>
-
-        {scheduledFixtures.length === 0 && (
-          <div className="text-center py-12 bg-gradient-to-br from-gray-50 to-gray-100 rounded-2xl border-2 border-dashed border-gray-300">
-            <div className="text-6xl mb-4">🎉</div>
-            <h4 className="text-xl font-bold text-gray-600 mb-2">
-              {selectedLeague === 'all' 
-                ? 'All Matches Completed' 
-                : `No Scheduled Matches in ${selectedLeague === 'general' ? 'General Fixtures' : 'This League'}`
-              }
-            </h4>
-            <p className="text-gray-500">
-              {selectedLeague === 'all' 
-                ? 'No scheduled matches remaining. Schedule new matches using the button above.'
-                : 'All matches in this category have been completed or scheduled.'
-              }
-            </p>
           </div>
-        )}
+        ))}
       </div>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex justify-center items-center space-x-2 mt-8">
+          <button
+            onClick={prevPage}
+            disabled={currentPage === 1}
+            className={`px-4 py-2 rounded-lg font-semibold transition duration-300 ${
+              currentPage === 1
+                ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
+                : 'bg-gray-700 text-white hover:bg-[#850cec]'
+            }`}
+          >
+            ← Prev
+          </button>
+
+          {getPageNumbers().map((number) => (
+            <button
+              key={number}
+              onClick={() => paginate(number)}
+              className={`px-4 py-2 rounded-lg font-semibold transition duration-300 ${
+                currentPage === number
+                  ? 'bg-[#850cec] text-white shadow-lg shadow-[#850cec]/30'
+                  : 'bg-gray-700 text-white hover:bg-gray-600'
+              }`}
+            >
+              {number}
+            </button>
+          ))}
+
+          <button
+            onClick={nextPage}
+            disabled={currentPage === totalPages}
+            className={`px-4 py-2 rounded-lg font-semibold transition duration-300 ${
+              currentPage === totalPages
+                ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
+                : 'bg-gray-700 text-white hover:bg-[#850cec]'
+            }`}
+          >
+            Next →
+          </button>
+        </div>
+      )}
+
+      {filteredFixtures.length === 0 && (
+        <div className="text-center py-16 bg-gray-800 rounded-2xl border-2 border-dashed border-gray-600">
+          <div className="text-6xl mb-4">🔍</div>
+          <h4 className="text-2xl font-bold text-gray-400 mb-2">No Fixtures Found</h4>
+          <p className="text-gray-500">
+            {searchTerm || selectedLeague !== 'all' || statusFilter !== 'all' || dateFilter
+              ? 'Try adjusting your filters to see more results.'
+              : 'No fixtures scheduled yet. Schedule your first match using the button above.'
+            }
+          </p>
+        </div>
+      )}
     </div>
   );
 };
